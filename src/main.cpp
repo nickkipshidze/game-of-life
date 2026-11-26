@@ -1,185 +1,44 @@
+#include <format>
 #include <vector>
-#include <iostream>
+#include <string>
 #include <SDL3/SDL.h>
+#include <SDL3_ttf/SDL_ttf.h>
 
-namespace conf {
-    SDL_FPoint windowsize = {1080, 675};
-    SDL_FPoint resolution = {1080, 675};
+#include "conf.hpp"
+#include "life.hpp"
+
+struct FPS {
+    int raw = 0;
+    int sum = 0;
+    int count = 0;
+    float avg = 0;
+    float cooldown = 0;
 };
 
-class Life {
-    private:
-        SDL_Vertex *vertices;
-        int *indices;
-
-        std::vector<u_int8_t> buffer1;
-        std::vector<u_int8_t> buffer2;
-
-        std::vector<int> nindices;
-
-    public:
-        std::vector<u_int8_t> *front;
-        std::vector<u_int8_t> *back;
-
-        SDL_FPoint offset = {0, 0};
-        float cellsize = 16.0f;
-        int width;
-        int height;
-
-        Life(int width, int height) : width(width), height(height) {
-            this->front = &this->buffer1;
-            this->back = &this->buffer2;
-
-            this->front->reserve(width*height);
-            this->back->reserve(width*height);
-
-            this->clear(0, *this->front);
-            this->clear(0, *this->back);
-
-            this->vertices = new SDL_Vertex[this->width*this->height*4];
-            this->indices = new int[this->width*this->height*6];
-
-            this->cachenindices();
-        };
-
-        ~Life() {
-            this->buffer1.clear();
-            this->buffer2.clear();
-            this->front = nullptr;
-            this->back = nullptr;
-            delete[] vertices;
-            delete[] indices;
-        }
-
-        void clear(u_int8_t value, std::vector<u_int8_t> &buffer) {
-            while ((int)buffer.size() < this->width*this->height)
-                buffer.push_back(0);
-            for (int i{0}; i<this->width*this->height; i++)
-                buffer[i] = value;
-        }
-
-        void swapbuffers() {
-            std::vector<u_int8_t> *temp = back;
-            back = front;
-            front = temp;
-            temp = nullptr;
-        }
-
-        int toi(int x, int y) {
-            if (x >= this->width) x = x-this->width;
-            if (y >= this->height) y = y-this->height;
-            if (x < 0) x += this->width;
-            if (y < 0) y += this->height;
-            return (y*this->width)+x;
-        }
-
-        void cachenindices() {
-            for (int y{0}; y < this->height; ++y) {
-                for (int x{0}; x < this->width; ++x) {
-                    this->nindices.push_back(toi(x-1, y-1));
-                    this->nindices.push_back(toi(x-0, y-1));
-                    this->nindices.push_back(toi(x+1, y-1));
-                    this->nindices.push_back(toi(x-1, y));
-                    this->nindices.push_back(toi(x+1, y));
-                    this->nindices.push_back(toi(x-1, y+1));
-                    this->nindices.push_back(toi(x-0, y+1));
-                    this->nindices.push_back(toi(x+1, y+1));
-                }
-            }
-        }
-
-        SDL_Point getmouse() {
-            SDL_FPoint mousePos;
-            SDL_GetMouseState(&mousePos.x, &mousePos.y);
-            mousePos.x = (mousePos.x / conf::windowsize.x) * conf::resolution.x - this->offset.x;
-            mousePos.y = (mousePos.y / conf::windowsize.y) * conf::resolution.y - this->offset.y;
-
-            SDL_Point gridPos = {
-                static_cast<int>(mousePos.x / (this->cellsize)),
-                static_cast<int>(mousePos.y / (this->cellsize))
-            };
-
-            return gridPos;
-        }
-
-        void appendRect(SDL_Vertex *vertices, int *indices, SDL_FRect rect, SDL_FColor color, int count=0) {
-            int offsetv = count*4;
-            int offseti = count*6;
-            vertices[offsetv+0] = {{rect.x+rect.w, rect.y}, color, {}};
-            vertices[offsetv+1] = {{rect.x, rect.y}, color, {}};
-            vertices[offsetv+2] = {{rect.x, rect.y+rect.h}, color, {}};
-            vertices[offsetv+3] = {{rect.x+rect.w, rect.y+rect.h}, color, {}};
-            indices[offseti+0] = offsetv+0;
-            indices[offseti+1] = offsetv+1;
-            indices[offseti+2] = offsetv+2;
-            indices[offseti+3] = offsetv+0;
-            indices[offseti+4] = offsetv+3;
-            indices[offseti+5] = offsetv+2;
-        }
-
-        void render(SDL_Renderer *renderer) {
-            float size = this->cellsize;
-            float gaps = 1.0f;
-
-            if (size < 5.0f) gaps = 0.0f;
-
-            int index = 0;
-            int rectangles = 0;
-            for (int y{0}; y < this->height; ++y) {
-                for (int x{0}; x < this->width; ++x) {
-                    if ((*front)[index] == (*back)[index] && (*front)[index] == 0) {
-                        index++;
-                        continue;
-                    }
-                    SDL_FRect cell = {
-                        this->offset.x+x*(this->cellsize),
-                        this->offset.y+y*(this->cellsize),
-                        this->cellsize-gaps,
-                        this->cellsize-gaps
-                    };                    
-                    float value = (*front)[index]; index++;
-                    appendRect(vertices, indices, cell, {value, value, value, 1}, rectangles);
-                    rectangles++;
-                }
-            }
-
-            SDL_FRect bgrect = {this->offset.x, this->offset.y, this->cellsize*this->width, this->cellsize*this->height};
-            SDL_SetRenderDrawColor(renderer, 4, 4, 4, 255);
-            SDL_RenderFillRect(renderer, &bgrect);
-            SDL_RenderGeometry(renderer, nullptr, vertices, rectangles*4, indices, rectangles*6);
-        }
-
-        void step() {
-            int index = 0;
-            for (int y{0}; y < this->height; ++y) {
-                for (int x{0}; x < this->width; ++x) {
-                    int neighbors = (
-                        (*front)[this->nindices[index*8+0]]+
-                        (*front)[this->nindices[index*8+1]]+
-                        (*front)[this->nindices[index*8+2]]+
-                        (*front)[this->nindices[index*8+3]]+
-                        (*front)[this->nindices[index*8+4]]+
-                        (*front)[this->nindices[index*8+5]]+
-                        (*front)[this->nindices[index*8+6]]+
-                        (*front)[this->nindices[index*8+7]]
-                    );
-                    
-                    if (neighbors < 2) (*back)[index] = 0;
-                    else if (neighbors == 3) (*back)[index] = 1;
-                    else if (neighbors > 3) (*back)[index] = 0;
-                    else (*back)[index] = (*front)[index];
-
-                    index++;
-                }
-            }
-            this->swapbuffers();
-        }
+struct Viewport {
+    SDL_FPoint offset = {0.0f, 0.0f};
+    SDL_FPoint offsetTarget = {0.0f, 0.0f};
+    float scaleTarget = 1.0f;
+    float scale = 1.0f;
+    float speed = 16.0f;
 };
+
+void renderText(SDL_Renderer *renderer, TTF_Font *font, const char *text, SDL_FPoint position, SDL_Color color) {
+    SDL_Surface *surface = TTF_RenderText_Solid(font, text, 0, color);
+    SDL_Texture *texture = SDL_CreateTextureFromSurface(renderer, surface);
+    SDL_FRect dstrect = {position.x, position.y, (float)texture->w, (float)texture->h};
+    SDL_RenderTexture(renderer, texture, nullptr, &dstrect);
+    SDL_DestroyTexture(texture);
+    SDL_DestroySurface(surface);
+}
 
 // Started dev 5:54 PM
 // Paused dev 8:25 PM
+// Continued dev 9:15 PM
+// Paused dev 11:50 PM
 int main(int, char *[]) {
     SDL_Init(SDL_INIT_VIDEO);
+    TTF_Init();
 
     SDL_Window *window = SDL_CreateWindow("Conway's Game of Life", conf::windowsize.x, conf::windowsize.y, 0);
     SDL_Renderer *renderer = SDL_CreateRenderer(window, nullptr);
@@ -188,17 +47,26 @@ int main(int, char *[]) {
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
     SDL_SetRenderVSync(renderer, 1);
 
-    Life world(2048, 1024);
-    bool simrun = false;
-    bool render = true;
-    bool vsync = true;
+    TTF_Font *fontPixelifyRegular = TTF_OpenFont("./assets/PixelifySans-Regular.ttf", 24);
+
+    Life world(conf::gridsize.x, conf::gridsize.y);
+    int cellsize = 16.0f;
+
+    SDL_FPoint center = {conf::gridsize.x/2.0f, conf::gridsize.y/2.0f};
+    Viewport camera{
+        .offset={-center.x*cellsize, -center.y*cellsize},
+        .offsetTarget={-center.x*cellsize, -center.y*cellsize}
+    };
+
+    // Starter glider (Also my profile picture)
+    (*world.front)[world.toi(center.x+32, center.y+21)] = 1;
+    (*world.front)[world.toi(center.x+33, center.y+21)] = 1;
+    (*world.front)[world.toi(center.x+34, center.y+21)] = 1;
+    (*world.front)[world.toi(center.x+34, center.y+20)] = 1;
+    (*world.front)[world.toi(center.x+33, center.y+19)] = 1;
 
     Uint64 clockNow = SDL_GetPerformanceCounter(), clockLast = clockNow;
-
-    int fpsRaw = 0;
-    int fpsSum = 0;
-    int fpsCount = 0;
-    float fpsCooldown = 1.0f;
+    FPS fps;
 
     bool running = true;
     while (running) {
@@ -217,28 +85,32 @@ int main(int, char *[]) {
                 case SDL_EVENT_WINDOW_RESIZED: {
                     conf::windowsize.x = event.window.data1;
                     conf::windowsize.y = event.window.data2;
+                    break;
                 }
                 case SDL_EVENT_MOUSE_WHEEL: {
                     float mouseX, mouseY;
                     SDL_GetMouseState(&mouseX, &mouseY);
-                    world.cellsize *= 1.0f + event.wheel.y * 0.1f;
-                    float oldSize = world.cellsize;
-                    world.cellsize *= 1.0f + event.wheel.y * 0.1f;
-                    float zoomRatio = world.cellsize / oldSize;
-                    world.offset.x = mouseX - (mouseX - world.offset.x) * zoomRatio;
-                    world.offset.y = mouseY - (mouseY - world.offset.y) * zoomRatio;
+                    float oldScale = camera.scaleTarget;
+                    camera.scaleTarget = SDL_clamp(
+                        camera.scaleTarget * SDL_powf(1.1f, event.wheel.y),
+                        0.05f, 10.0f
+                    );
+                    float ratio = camera.scaleTarget / oldScale;
+                    camera.offsetTarget.x = mouseX - (mouseX - camera.offsetTarget.x) * ratio;
+                    camera.offsetTarget.y = mouseY - (mouseY - camera.offsetTarget.y) * ratio;
+                    break;
                 }
                 case SDL_EVENT_KEY_DOWN: {
                     if (event.key.scancode == SDL_SCANCODE_Q)
                         running = false;
                     if (event.key.scancode == SDL_SCANCODE_V) {
-                        vsync = !vsync;
-                        SDL_SetRenderVSync(renderer, vsync);
+                        conf::vsync = !conf::vsync;
+                        SDL_SetRenderVSync(renderer, conf::vsync);
                     }
                     if (event.key.scancode == SDL_SCANCODE_SPACE)
-                        simrun = !simrun;
+                        conf::simulation = !conf::simulation;
                     if (event.key.scancode == SDL_SCANCODE_R)
-                        render = !render;
+                        conf::rendering = !conf::rendering;
                     break;
                 }
             }
@@ -246,8 +118,8 @@ int main(int, char *[]) {
             if (event.type == SDL_EVENT_MOUSE_MOTION && (event.motion.state & SDL_BUTTON_MMASK)) {
                 float dx = event.motion.xrel;
                 float dy = event.motion.yrel;
-                world.offset.x += dx;
-                world.offset.y += dy;
+                camera.offsetTarget.x += dx;
+                camera.offsetTarget.y += dy;
             }
         }
 
@@ -255,35 +127,67 @@ int main(int, char *[]) {
         SDL_RenderClear(renderer);
 
         SDL_MouseButtonFlags mouseFlags = SDL_GetMouseState(nullptr, nullptr);
+        SDL_Point mousePos = world.getmouse();
         if (mouseFlags & SDL_BUTTON_MASK(SDL_BUTTON_LEFT)) {
-            SDL_Point mousePos = world.getmouse();
             (*world.front)[world.toi(mousePos.x, mousePos.y)] = 1;
         } else if (mouseFlags & SDL_BUTTON_MASK(SDL_BUTTON_RIGHT)) {
-            SDL_Point mousePos = world.getmouse();
             (*world.front)[world.toi(mousePos.x, mousePos.y)] = 0;
         }
 
-        if (simrun) { world.step(); }
-        if (render) world.render(renderer);
+        SDL_FPoint diff = {
+            camera.offsetTarget.x - camera.offset.x,
+            camera.offsetTarget.y - camera.offset.y
+        };
+        float moveT = 1.0f - SDL_expf(-camera.speed * deltaTime);
+        camera.offset.x += diff.x * moveT;
+        camera.offset.y += diff.y * moveT;
+        float zoomT = 1.0f - SDL_expf(-camera.speed * deltaTime);
+        camera.scale += (camera.scaleTarget - camera.scale) * zoomT;
+        world.offset = camera.offset;
+        world.cellsize = cellsize * camera.scale;
 
-        fpsRaw = SDL_roundf(1.0f/deltaTime);
-        fpsSum += fpsRaw;
-        fpsCount++;
+        if (conf::simulation) {
+            for (int step{0}; step < conf::steps; ++step)
+                world.step();
+        }
+        if (conf::rendering) {
+            world.render(renderer);
+        }
 
-        fpsCooldown -= deltaTime;
-        if (fpsCooldown <= 0) {
-            fpsCooldown = 1.0f;
-            float fpsAvg = (float)fpsSum / fpsCount;
-            fpsSum = 0;
-            fpsCount = 0;
-            std::cout << "FPS / AVG : " << fpsRaw << "/" << fpsAvg << std::endl;
+        std::vector<std::string> info = {
+            std::format("{} - Nick Kipshidze", __DATE__),
+            std::format("FPS {}", SDL_roundf(fps.avg)),
+            std::format("Grid {}x{}", conf::gridsize.x, conf::gridsize.y),
+            std::format("VSync (V) {}", conf::vsync),
+            std::format("Render (R) {}", conf::rendering),
+            std::format("Sim (Space) {}", conf::simulation),
+            std::format("Selected [{}, {}]", mousePos.x, mousePos.y),
+        };
+        for (int message{0}; message < (int)info.size(); ++message) {
+            renderText(
+                renderer, fontPixelifyRegular, info[message].c_str(),
+                {10.0f, 10.0f+message*30.0f}, {255, 255, 255, 255}
+            );
+        }
+
+        fps.raw = SDL_roundf(1.0f/deltaTime);
+        fps.sum += fps.raw;
+        fps.count++;
+        fps.cooldown -= deltaTime;
+        if (fps.cooldown <= 0) {
+            fps.cooldown = 1.0f;
+            fps.avg = (float)fps.sum / fps.count;
+            fps.sum = 0;
+            fps.count = 0;
         }
 
         SDL_RenderPresent(renderer);
     }
 
+    TTF_CloseFont(fontPixelifyRegular);
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
+    TTF_Quit();
     SDL_Quit();
     
     return 0;
