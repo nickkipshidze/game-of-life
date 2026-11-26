@@ -1,0 +1,8 @@
+{
+    "clangd.fallbackFlags": [
+        "-x",
+        "c++",
+        "-std=c++23",
+        "-I../include"
+    ]
+}
