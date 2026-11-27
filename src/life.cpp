@@ -95,8 +95,14 @@ void Life::appendRect(SDL_Vertex *vertices, int *indices, SDL_FRect rect, SDL_FC
 }
 
 void Life::renderGrid(SDL_Renderer *renderer) {
-    float alpha = 1.0f-SDL_clamp((this->cellsize-25.0f)/-23.0f, 0.0f, 1.0f);
-    SDL_SetRenderDrawColor(renderer, 16*alpha, 16*alpha, 16*alpha, 255);
+    float alpha = 1.0f-SDL_clamp((this->cellsize-18.0f)/-23.0f, 0.0f, 1.0f);
+    SDL_SetRenderDrawColor(
+        renderer,
+        conf::color::glines.r*alpha,
+        conf::color::glines.g*alpha,
+        conf::color::glines.b*alpha,
+        conf::color::glines.a*alpha
+    );
     
     for (float y{this->offset.y}; y < this->offset.y+this->height*this->cellsize; y+=this->cellsize)
         SDL_RenderLine(renderer, 0, y, conf::resolution.x, y);
@@ -111,8 +117,8 @@ void Life::render(SDL_Renderer *renderer) {
     int index = 0, rectangles = 0;
     for (int y{0}; y < this->height; ++y) {
         for (int x{0}; x < this->width; ++x) {
-            if ((*front)[index] == (*back)[index] && (*front)[index] == 0) {
-                index++;
+            float value = (*front)[index]; index++;
+            if ((value == (*back)[index] && value == 0) || value == 0) {
                 continue;
             }
             SDL_FRect cell = {
@@ -121,17 +127,27 @@ void Life::render(SDL_Renderer *renderer) {
                 this->cellsize-gaps,
                 this->cellsize-gaps
             };
-            float value = (*front)[index]; index++;
-            appendRect(vertices, indices, cell, {value, value, value, 1}, rectangles);
+            appendRect(vertices, indices, cell, {
+                conf::color::cell.r*value,
+                conf::color::cell.g*value,
+                conf::color::cell.b*value,
+                conf::color::cell.a
+            }, rectangles);
             rectangles++;
         }
     }
 
     SDL_FRect bgrect = {this->offset.x, this->offset.y, this->cellsize*this->width, this->cellsize*this->height};
-    SDL_SetRenderDrawColor(renderer, 4, 4, 4, 255);
+    SDL_SetRenderDrawColor(
+        renderer,
+        conf::color::gridbg.r,
+        conf::color::gridbg.g,
+        conf::color::gridbg.b,
+        conf::color::gridbg.a
+    );
     SDL_RenderFillRect(renderer, &bgrect);
     
-    if (this->cellsize > 3.0f) this->renderGrid(renderer);
+    if (this->cellsize > 2.0f) this->renderGrid(renderer);
 
     SDL_RenderGeometry(renderer, nullptr, vertices, rectangles*4, indices, rectangles*6);
 }
