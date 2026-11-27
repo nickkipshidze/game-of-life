@@ -14,3 +14,10 @@ namespace conf {
 
     inline int steps = 1;
 };
+
+namespace conf::color {
+    inline SDL_Color mainbg = {16, 16, 16, 255};
+    inline SDL_Color gridbg = {4, 4, 4, 255};
+    inline SDL_Color glines = {32, 32, 32, 255}; 
+    inline SDL_FColor cell = {1, 1, 1, 1};
+}
