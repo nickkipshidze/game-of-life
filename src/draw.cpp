@@ -1,0 +1,188 @@
+#include <string>
+#include <SDL3/SDL.h>
+
+#include "life.hpp"
+
+namespace GDraw {
+    int rotation = 0;
+    bool ghost = false;
+    SDL_Renderer *renderer;
+
+    void renderghost(Life &world, int x, int y) {
+        SDL_FRect rect = {
+            x*world.cellsize+world.offset.x,
+            y*world.cellsize+world.offset.y,
+            world.cellsize,
+            world.cellsize
+        };
+        SDL_RenderFillRect(GDraw::renderer, &rect);
+    }
+
+    // I had dejavu looking at this
+    void cell(Life &world, int x, int y, Uint8 v=1) {
+        if (GDraw::ghost) GDraw::renderghost(world, x, y);
+        else (*world.front)[world.toi(x, y)] = v;
+    }
+
+    void pattern(Life &world, int w, int h, Uint8 *pattern, int x, int y, Uint8 v=1) {
+        int cx = w/2, cy = (int)(h/2.0f-0.1f);
+        for (int yo{0}; yo < h; ++yo)
+            for (int xo{0}; xo < w; ++xo)
+                if (pattern[yo*w+xo]) {
+                    switch (GDraw::rotation) {
+                        case 0: GDraw::cell(world, x+xo-cx, y+yo-cy, v); break;
+                        case 1: GDraw::cell(world, x-xo+cx, y+yo-cy, v); break;
+                        case 2: GDraw::cell(world, x-xo+cx, y-yo+cy, v); break;
+                        case 3: GDraw::cell(world, x+xo-cx, y-yo+cy, v); break;
+                    }
+                }
+    }
+
+    void square(Life &world, int x, int y, Uint8 v=1) {
+        GDraw::cell(world, x+0, y+0, v);
+        GDraw::cell(world, x+1, y+0, v);
+        GDraw::cell(world, x+0, y+1, v);
+        GDraw::cell(world, x+1, y+1, v);
+    }
+
+    void glider(Life &world, int x, int y, Uint8 v=1) {
+        Uint8 pattern[] = {
+            0, 1, 0,
+            0, 0, 1,
+            1, 1, 1
+        };
+        GDraw::pattern(world, 3, 3, pattern, x, y, v);
+    }
+
+    void lightship(Life &world, int x, int y, Uint8 v=1) {
+        Uint8 pattern[] = {
+            1, 0, 0, 1, 0,
+            0, 0, 0, 0, 1,
+            1, 0, 0, 0, 1,
+            0, 1, 1, 1, 1
+        };
+        GDraw::pattern(world, 5, 4, pattern, x, y, v);
+    }
+
+    void middleship(Life &world, int x, int y, Uint8 v=1) {
+        Uint8 pattern[] = {
+            0, 0, 1, 0, 0, 0,
+            1, 0, 0, 0, 1, 0,
+            0, 0, 0, 0, 0, 1,
+            1, 0, 0, 0, 0, 1,
+            0, 1, 1, 1, 1, 1
+        };
+        GDraw::pattern(world, 6, 5, pattern, x, y, v);
+    }
+
+    void heavyship(Life &world, int x, int y, Uint8 v=1) {
+        Uint8 pattern[] = {
+            0, 0, 1, 1, 0, 0, 0,
+            1, 0, 0, 0, 0, 1, 0,
+            0, 0, 0, 0, 0, 0, 1,
+            1, 0, 0, 0, 0, 0, 1,
+            0, 1, 1, 1, 1, 1, 1
+        };
+        GDraw::pattern(world, 7, 5, pattern, x, y, v);
+    }
+
+    void pentadecathlon(Life &world, int x, int y, Uint8 v=1) {
+        Uint8 pattern[] = {
+            0, 0, 0, 1, 1, 1, 0, 0, 0,
+            0, 0, 1, 0, 0, 0, 1, 0, 0,
+            0, 1, 0, 0, 0, 0, 0, 1, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0,
+            1, 0, 0, 0, 0, 0, 0, 0, 1,
+            1, 0, 0, 0, 0, 0, 0, 0, 1,
+            0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 1, 0, 0, 0, 0, 0, 1, 0,
+            0, 0, 1, 0, 0, 0, 1, 0, 0,
+            0, 0, 0, 1, 1, 1, 0, 0, 0,
+        };
+        GDraw::pattern(world, 9, 10, pattern, x, y, v);
+    }
+
+    void galaxy(Life &world, int x, int y, Uint8 v=1) {
+        Uint8 pattern[] = {
+            1, 1, 1, 1, 1, 1, 0, 1, 1,
+            1, 1, 1, 1, 1, 1, 0, 1, 1,
+            0, 0, 0, 0, 0, 0, 0, 1, 1,
+            1, 1, 0, 0, 0, 0, 0, 1, 1,
+            1, 1, 0, 0, 0, 0, 0, 1, 1,
+            1, 1, 0, 0, 0, 0, 0, 1, 1,
+            1, 1, 0, 0, 0, 0, 0, 0, 0,
+            1, 1, 0, 1, 1, 1, 1, 1, 1,
+            1, 1, 0, 1, 1, 1, 1, 1, 1,
+        };
+        GDraw::pattern(world, 9, 9, pattern, x, y, v);
+    }
+
+    void glidergun(Life &world, int x, int y, Uint8 v=1) {
+        // First glider is already generated, I made it so so you can tell the rotation easily.
+        Uint8 pattern[] = {
+            0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,
+            0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,1,0,0,0,0,0,0,0,0,0,0,0,
+            0,0,0,0,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,0,0,0,0,0,1,1,
+            0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,1,0,0,0,0,1,1,0,0,0,0,0,0,0,0,0,0,0,0,1,1,
+            1,1,0,0,0,0,0,0,0,0,1,0,0,0,0,0,1,0,0,0,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+            1,1,0,0,0,0,0,0,0,0,1,0,0,0,1,0,1,1,0,0,0,0,1,0,1,0,0,0,0,0,0,0,0,0,0,0,
+            0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,
+            0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+            0,0,0,0,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+            0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,
+            0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,0,0,0,
+            0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,0,0,0,0
+        };
+        GDraw::pattern(world, 36, 12, pattern, x, y, v);
+    }
+};
+
+namespace Brush {
+    std::vector<void (*)(Life&, int, int, Uint8)> func = {
+        GDraw::cell,
+        GDraw::square,
+        GDraw::glider,
+        GDraw::lightship,
+        GDraw::middleship,
+        GDraw::heavyship,
+        GDraw::pentadecathlon,
+        GDraw::galaxy,
+        GDraw::glidergun
+    };
+
+    std::vector<std::string> label = {
+        "Cell",
+        "Square",
+        "Glider",
+        "L-Spaceship",
+        "M-Spaceship",
+        "H-Spaceship",
+        "Pentadecathlon",
+        "Galaxy",
+        "Glider Gun"
+    };
+
+    int active = 0;
+
+    void draw(Life &world, int x, int y, Uint8 v=1) {
+        Brush::func[Brush::active](world, x, y, v);
+    }
+
+    void renderghost(SDL_Renderer *renderer, Life &world, int x, int y, Uint8 v=1) {
+        GDraw::ghost = true;
+        GDraw::renderer = renderer;
+        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 64);
+        Brush::func[Brush::active](world, x, y, v);
+        GDraw::ghost = false;
+    }
+
+    std::string getlabel() {
+        return Brush::label[Brush::active];
+    }
+
+    void next(int offset=1) {
+        Brush::active = Brush::active+offset;
+        if (Brush::active < 0) Brush::active += Brush::func.size();
+        Brush::active %= func.size();
+    }
+}
