@@ -6,6 +6,7 @@
 
 #include "conf.hpp"
 #include "life.hpp"
+#include "draw.hpp"
 
 struct FPS {
     int raw = 0;
@@ -23,6 +24,24 @@ struct Viewport {
     float speed = 16.0f;
 };
 
+void renderVignette(SDL_Renderer *renderer, SDL_FColor color={1, 1, 1, 1}) {
+    float w = conf::resolution.x, h = conf::resolution.y;
+    SDL_Vertex vertices[5] = {
+        {{0, 0}, color, {0, 0}}, // Top left
+        {{w, 0}, color, {0, 0}}, // Top right
+        {{0, h}, color, {0, 0}}, // Bottom left
+        {{w, h}, color, {0, 0}}, // Bottom right
+        {{w/2, h/2}, {0, 0, 0, 0}, {0, 0}}, // Center
+    };
+    int indices[12] = {
+        0, 1, 4,
+        1, 3, 4,
+        3, 2, 4,
+        2, 0, 4
+    };
+    SDL_RenderGeometry(renderer, nullptr, vertices, 5, indices, 12);
+}
+
 void renderText(SDL_Renderer *renderer, TTF_Font *font, const char *text, SDL_FPoint position, SDL_Color color) {
     SDL_Surface *surface = TTF_RenderText_Solid(font, text, 0, color);
     SDL_Texture *texture = SDL_CreateTextureFromSurface(renderer, surface);
@@ -36,6 +55,10 @@ void renderText(SDL_Renderer *renderer, TTF_Font *font, const char *text, SDL_FP
 // Paused dev 8:25 PM
 // Continued dev 9:15 PM
 // Paused dev 11:50 PM
+// Continued dev 9:15 AM
+// Paused dev 10:46 AM
+// Continued dev 11:05 AM
+// Paused dev 1:18 PM
 int main(int, char *[]) {
     SDL_Init(SDL_INIT_VIDEO);
     TTF_Init();
@@ -59,11 +82,9 @@ int main(int, char *[]) {
     };
 
     // Starter glider (Also my profile picture)
-    (*world.front)[world.toi(center.x+32, center.y+21)] = 1;
-    (*world.front)[world.toi(center.x+33, center.y+21)] = 1;
-    (*world.front)[world.toi(center.x+34, center.y+21)] = 1;
-    (*world.front)[world.toi(center.x+34, center.y+20)] = 1;
-    (*world.front)[world.toi(center.x+33, center.y+19)] = 1;
+    GDraw::glider(world, center.x+32, center.y+19);
+
+    const bool *numkeys = SDL_GetKeyboardState(NULL);
 
     Uint64 clockNow = SDL_GetPerformanceCounter(), clockLast = clockNow;
     FPS fps;
@@ -74,6 +95,8 @@ int main(int, char *[]) {
         float deltaTime = static_cast<float>(clockNow - clockLast) / SDL_GetPerformanceFrequency();
         deltaTime = SDL_clamp(deltaTime, 0.0001f, 1.0f);
         clockLast = clockNow;
+
+        SDL_Point mousePos = world.getmouse();
 
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
@@ -90,18 +113,34 @@ int main(int, char *[]) {
                 case SDL_EVENT_MOUSE_WHEEL: {
                     float mouseX, mouseY;
                     SDL_GetMouseState(&mouseX, &mouseY);
+                    mouseX = (mouseX / conf::windowsize.x) * conf::resolution.x;
+                    mouseY = (mouseY / conf::windowsize.y) * conf::resolution.y;
+
                     float oldScale = camera.scaleTarget;
                     camera.scaleTarget = SDL_clamp(
                         camera.scaleTarget * SDL_powf(1.1f, event.wheel.y),
                         0.05f, 10.0f
                     );
+
                     float ratio = camera.scaleTarget / oldScale;
                     camera.offsetTarget.x = mouseX - (mouseX - camera.offsetTarget.x) * ratio;
                     camera.offsetTarget.y = mouseY - (mouseY - camera.offsetTarget.y) * ratio;
+
+                    break;
+                }
+                case SDL_EVENT_MOUSE_MOTION: {
+                    SDL_MouseButtonFlags mouseFlags = SDL_GetMouseState(nullptr, nullptr);
+                    if (mouseFlags & SDL_BUTTON_MASK(SDL_BUTTON_LEFT)) Brush::draw(world, mousePos.x, mousePos.y, 1);
+                    if (mouseFlags & SDL_BUTTON_MASK(SDL_BUTTON_RIGHT)) Brush::draw(world, mousePos.x, mousePos.y, 0);
+                    break;
+                }
+                case SDL_EVENT_MOUSE_BUTTON_DOWN: {
+                    if (event.button.button == SDL_BUTTON_LEFT) Brush::draw(world, mousePos.x, mousePos.y, 1);
+                    if (event.button.button == SDL_BUTTON_RIGHT) Brush::draw(world, mousePos.x, mousePos.y, 0);
                     break;
                 }
                 case SDL_EVENT_KEY_DOWN: {
-                    if (event.key.scancode == SDL_SCANCODE_Q)
+                    if (event.key.scancode == SDL_SCANCODE_ESCAPE)
                         running = false;
                     if (event.key.scancode == SDL_SCANCODE_V) {
                         conf::vsync = !conf::vsync;
@@ -109,8 +148,18 @@ int main(int, char *[]) {
                     }
                     if (event.key.scancode == SDL_SCANCODE_SPACE)
                         conf::simulation = !conf::simulation;
-                    if (event.key.scancode == SDL_SCANCODE_R)
+                    if (event.key.scancode == SDL_SCANCODE_RETURN)
+                        world.step();
+                    if (event.key.scancode == SDL_SCANCODE_P)
                         conf::rendering = !conf::rendering;
+                    if (event.key.scancode == SDL_SCANCODE_E)
+                        Brush::next(1);
+                    if (event.key.scancode == SDL_SCANCODE_Q)
+                        Brush::next(-1);
+                    if (event.key.scancode == SDL_SCANCODE_R) {
+                        GDraw::rotation += 1;
+                        GDraw::rotation %= 4;
+                    }
                     break;
                 }
             }
@@ -123,16 +172,13 @@ int main(int, char *[]) {
             }
         }
 
-        SDL_SetRenderDrawColor(renderer, 8, 8, 8, 255);
-        SDL_RenderClear(renderer);
+        float moveSpeedup = 32.0f;
+        if (numkeys[SDL_SCANCODE_LSHIFT]) moveSpeedup = 100.0f;
 
-        SDL_MouseButtonFlags mouseFlags = SDL_GetMouseState(nullptr, nullptr);
-        SDL_Point mousePos = world.getmouse();
-        if (mouseFlags & SDL_BUTTON_MASK(SDL_BUTTON_LEFT)) {
-            (*world.front)[world.toi(mousePos.x, mousePos.y)] = 1;
-        } else if (mouseFlags & SDL_BUTTON_MASK(SDL_BUTTON_RIGHT)) {
-            (*world.front)[world.toi(mousePos.x, mousePos.y)] = 0;
-        }
+        if (numkeys[SDL_SCANCODE_W]) camera.offsetTarget.y += camera.speed * moveSpeedup * deltaTime;
+        if (numkeys[SDL_SCANCODE_A]) camera.offsetTarget.x += camera.speed * moveSpeedup * deltaTime;
+        if (numkeys[SDL_SCANCODE_S]) camera.offsetTarget.y -= camera.speed * moveSpeedup * deltaTime;
+        if (numkeys[SDL_SCANCODE_D]) camera.offsetTarget.x -= camera.speed * moveSpeedup * deltaTime;
 
         SDL_FPoint diff = {
             camera.offsetTarget.x - camera.offset.x,
@@ -146,6 +192,9 @@ int main(int, char *[]) {
         world.offset = camera.offset;
         world.cellsize = cellsize * camera.scale;
 
+        SDL_SetRenderDrawColor(renderer, conf::color::mainbg.r, conf::color::mainbg.g, conf::color::mainbg.b, conf::color::mainbg.a);
+        SDL_RenderClear(renderer);
+
         if (conf::simulation) {
             for (int step{0}; step < conf::steps; ++step)
                 world.step();
@@ -154,14 +203,18 @@ int main(int, char *[]) {
             world.render(renderer);
         }
 
+        Brush::renderghost(renderer, world, mousePos.x, mousePos.y);
+        renderVignette(renderer, {0, 0, 0, 0.4});
+
         std::vector<std::string> info = {
             std::format("{} - Nick Kipshidze", __DATE__),
             std::format("FPS {}", SDL_roundf(fps.avg)),
             std::format("Grid {}x{}", conf::gridsize.x, conf::gridsize.y),
             std::format("VSync (V) {}", conf::vsync),
-            std::format("Render (R) {}", conf::rendering),
-            std::format("Sim (Space) {}", conf::simulation),
+            std::format("Render (P) {}", conf::rendering),
+            std::format("Sim (Space/Enter) {}", conf::simulation),
             std::format("Selected [{}, {}]", mousePos.x, mousePos.y),
+            std::format("Brush (Q/E/R) \"{}\"", Brush::getlabel())
         };
         for (int message{0}; message < (int)info.size(); ++message) {
             renderText(
@@ -169,6 +222,8 @@ int main(int, char *[]) {
                 {10.0f, 10.0f+message*30.0f}, {255, 255, 255, 255}
             );
         }
+
+        SDL_RenderPresent(renderer);
 
         fps.raw = SDL_roundf(1.0f/deltaTime);
         fps.sum += fps.raw;
@@ -180,8 +235,6 @@ int main(int, char *[]) {
             fps.sum = 0;
             fps.count = 0;
         }
-
-        SDL_RenderPresent(renderer);
     }
 
     TTF_CloseFont(fontPixelifyRegular);
